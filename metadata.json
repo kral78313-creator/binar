@@ -1,0 +1,6 @@
+{
+  "name": "Document Converter",
+  "description": "Convert documents, spreadsheets, images, and texts between various formats including PDF, PNG, Excel, CSV, JSON, Markdown, and more.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
