@@ -10,9 +10,17 @@ interface FileItemRowProps {
   key?: string;
   item: FileItem;
   onUpdateTargetFormat: (id: string, format: string) => void;
+  onUpdateTargetLanguage: (id: string, language: string) => void;
   onStartConversion: (id: string) => void | Promise<void>;
   onRemove: (id: string) => void;
   onPreview: (item: FileItem) => void | any;
+}
+
+// Helper to check if file content language translation can be applied
+function isTranslatable(targetFormat: string | undefined, srcExt: string): boolean {
+  if (!targetFormat) return false;
+  const translatableFormats = ['txt', 'md', 'html', 'json', 'csv', 'xlsx', 'xls', 'pdf'];
+  return translatableFormats.includes(srcExt.toLowerCase()) && translatableFormats.includes(targetFormat.toLowerCase());
 }
 
 // Helper to format file sizes
@@ -43,6 +51,7 @@ export function getFileIcon(ext: string) {
 export default function FileItemRow({
   item,
   onUpdateTargetFormat,
+  onUpdateTargetLanguage,
   onStartConversion,
   onRemove,
   onPreview
@@ -79,26 +88,58 @@ export default function FileItemRow({
       <div className="flex flex-wrap items-center gap-3.5 flex-shrink-0 md:flex-grow justify-start md:justify-end">
         {/* Step 1: Selector (Visible when Idle or Completed) */}
         {item.status === 'idle' && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-black text-slate-600 uppercase tracking-wide">To:</span>
-            <select
-              value={item.targetFormat || ''}
-              onChange={(e) => onUpdateTargetFormat(item.id, e.target.value)}
-              className="text-xs font-black text-slate-900 bg-amber-100 hover:bg-amber-200 border-2 border-slate-900 rounded-xl p-2 px-3 pr-8 focus:outline-none focus:bg-amber-200 cursor-pointer min-w-[100px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] appearance-none relative"
-              style={{
-                backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>")`,
-                backgroundRepeat: 'no-repeat',
-                backgroundPosition: 'right 8px center',
-                backgroundSize: '12px'
-              }}
-            >
-              <option value="" disabled>SELECT</option>
-              {availableFormats.map((fmt) => (
-                <option key={fmt} value={fmt}>
-                  {fmt.toUpperCase()}
-                </option>
-              ))}
-            </select>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black text-slate-600 uppercase tracking-wide">To:</span>
+              <select
+                value={item.targetFormat || ''}
+                onChange={(e) => onUpdateTargetFormat(item.id, e.target.value)}
+                className="text-xs font-black text-slate-900 bg-amber-100 hover:bg-amber-200 border-2 border-slate-900 rounded-xl p-2 px-3 pr-8 focus:outline-none focus:bg-amber-200 cursor-pointer min-w-[100px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] appearance-none relative"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>")`,
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'right 8px center',
+                  backgroundSize: '12px'
+                }}
+              >
+                <option value="" disabled>SELECT</option>
+                {availableFormats.map((fmt) => (
+                  <option key={fmt} value={fmt}>
+                    {fmt.toUpperCase()}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Language Translation Selector */}
+            {isTranslatable(item.targetFormat, extension) && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black text-slate-600 uppercase tracking-wide">Language:</span>
+                <select
+                  value={item.targetLanguage || ''}
+                  onChange={(e) => onUpdateTargetLanguage(item.id, e.target.value)}
+                  className="text-xs font-black text-slate-900 bg-indigo-100 hover:bg-indigo-200 border-2 border-slate-900 rounded-xl p-2 px-3 pr-8 focus:outline-none focus:bg-indigo-200 cursor-pointer min-w-[130px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] appearance-none relative"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 8px center',
+                    backgroundSize: '12px'
+                  }}
+                >
+                  <option value="">Original Language</option>
+                  <option value="Turkish">🇹🇷 Turkish (Türkçe)</option>
+                  <option value="English">🇬🇧 English</option>
+                  <option value="Spanish">🇪🇸 Spanish (Español)</option>
+                  <option value="French">🇫🇷 French (Français)</option>
+                  <option value="German">🇩🇪 German (Deutsch)</option>
+                  <option value="Japanese">🇯🇵 Japanese (日本語)</option>
+                  <option value="Italian">🇮🇹 Italian (Italiano)</option>
+                  <option value="Portuguese">🇵🇹 Portuguese (Português)</option>
+                  <option value="Chinese">🇨🇳 Chinese (中文)</option>
+                  <option value="Arabic">🇸🇦 Arabic (العربية)</option>
+                </select>
+              </div>
+            )}
           </div>
         )}
 

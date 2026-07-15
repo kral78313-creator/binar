@@ -1,15 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   FileCheck, Shield, Zap, Sparkles, FolderUp, 
-  Trash2, RefreshCw, Check, AlertTriangle, Download 
+  Trash2, RefreshCw, Check, AlertTriangle, Download,
+  ChevronDown, Globe
 } from 'lucide-react';
 
 import { FileItem, CONVERSION_MAP, ConvertedResult } from './types';
 import DropZone from './components/DropZone';
-import FileItemRow from './components/FileItemRow';
+import FileItemRow, { formatBytes } from './components/FileItemRow';
 import PreviewModal from './components/PreviewModal';
 import GoogleAuth from './components/GoogleAuth';
+
+import * as XLSX from 'xlsx';
 
 // Conversion Utility imports
 import { convertImage } from './utils/imageConverter';
@@ -20,19 +23,255 @@ import {
   convertSpreadsheetToJson, 
   convertSpreadsheetToHtml, 
   convertCsvToXlsx, 
-  convertSpreadsheetToHtmlString 
+  convertSpreadsheetToHtmlString,
+  parseSpreadsheet
 } from './utils/excelConverter';
 import { 
   convertTextToPdf, 
   convertJsonToSpreadsheet, 
   markdownToHtml, 
-  htmlToMarkdown 
+  htmlToMarkdown,
+  jsonToXml,
+  xmlToJson,
+  workbookToXml,
+  markdownToRtf,
+  rtfToText,
+  convertHtmlToDocx,
+  parseDocxText,
+  convertTextToPptx,
+  parsePptxText
 } from './utils/textConverter';
+import {
+  extractAudioFromVideo,
+  createAudioVisualizerVideo,
+  convertImageToVideo
+} from './utils/mediaConverter';
+
+// Translation helper APIs
+async function translateTextContent(text: string, targetLanguage: string, format: string): Promise<string> {
+  const response = await fetch('/api/translate', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ text, targetLanguage, format }),
+  });
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error || 'Failed to translate document content');
+  }
+  const data = await response.json();
+  return data.translatedText;
+}
+
+async function translateSpreadsheetData(data: any[][], targetLanguage: string): Promise<any[][]> {
+  const textRepresentation = JSON.stringify(data);
+  const translatedStr = await translateTextContent(textRepresentation, targetLanguage, 'json');
+  try {
+    return JSON.parse(translatedStr);
+  } catch (e) {
+    console.error("Failed to parse translated spreadsheet JSON, returning original", e);
+    return data;
+  }
+}
+
+const langLabels = {
+  en: "Change web page language:",
+  tr: "Web sayfasının dilini değiştirin:",
+  fr: "Changer la langue de la page web :",
+  de: "Sprache der Webseite ändern:"
+};
+
+const translations = {
+  en: {
+    banner: "FREE DOCUMENT CONVERTER",
+    secureLocal: "SECURE LOCAL",
+    tagline: "Lightning-fast local document conversion. All process completed directly inside your browser.",
+    instantWasm: "⚡ INSTANT WEBASSEMBLY",
+    queueTitle: "File Conversion Queue",
+    filesCountSingle: "file",
+    filesCountPlural: "files",
+    convertAll: "Convert All",
+    downloadAll: "Download All",
+    clearAll: "Clear All",
+    privateTitle: "100% Private",
+    privateDesc: "All transformations happen locally on your system using WebAssembly and client-side modules. Your sensitive data is never uploaded to any server.",
+    instantTitle: "Instant Conversion",
+    instantDesc: "No network delays, upload buffers, or wait times in server queues. Document processing finishes instantly in a matter of seconds.",
+    previewTitle: "Local Previews",
+    previewDesc: "Inspect sheets, read text documents, parse markup, and view high-resolution page-by-page images directly in our interactive lightbox player.",
+    historyTitle: "Conversion History",
+    historyEmpty: "No conversion history yet. Drag & drop files above to start converting!",
+    clearHistory: "Clear History",
+    historyOriginal: "Original File",
+    historyConverted: "Converted File",
+    historySize: "Size",
+    historyDate: "Date",
+    historyStatus: "Status",
+    historyAction: "Action",
+    historySessionBadge: "Active Session",
+    historyPastBadge: "Expired",
+    downloadAgain: "Download",
+    convertAgain: "Convert Again",
+    historyFailed: "Failed"
+  },
+  tr: {
+    banner: "ÜCRETSİZ BELGE DÖNÜŞTÜRÜCÜ",
+    secureLocal: "GÜVENLİ YEREL",
+    tagline: "Işık hızında yerel belge dönüştürme. Tüm işlemler doğrudan tarayıcınızda tamamlanır.",
+    instantWasm: "⚡ ANINDA WEBASSEMBLY",
+    queueTitle: "Dosya Dönüştürme Sırası",
+    filesCountSingle: "dosya",
+    filesCountPlural: "dosya",
+    convertAll: "Tümünü Dönüştür",
+    downloadAll: "Tümünü İndir",
+    clearAll: "Tümünü Temizle",
+    privateTitle: "%100 Güvenli",
+    privateDesc: "Tüm dönüşümler WebAssembly ve istemci tarafı modülleriyle yerel olarak bilgisayarınızda gerçekleşir. Hassas verileriniz asla sunucuya yüklenmez.",
+    instantTitle: "Anında Dönüşüm",
+    instantDesc: "Ağ gecikmesi, yükleme beklemesi veya sunucu sırası yok. Belge işleme saniyeler içinde anında tamamlanır.",
+    previewTitle: "Yerel Önizlemeler",
+    previewDesc: "Etkileşimli önizleme penceremizde sayfaları inceleyin, metin belgelerini okuyun ve yüksek çözünürlüklü sayfa görsellerini görüntüleyin.",
+    historyTitle: "Dönüşüm Geçmişi",
+    historyEmpty: "Henüz dönüşüm geçmişi yok. Dönüştürmeye başlamak için yukarıya dosya sürükleyip bırakın!",
+    clearHistory: "Geçmişi Temizle",
+    historyOriginal: "Orijinal Dosya",
+    historyConverted: "Dönüştürülen Dosya",
+    historySize: "Boyut",
+    historyDate: "Tarih",
+    historyStatus: "Durum",
+    historyAction: "İşlem",
+    historySessionBadge: "Mevcut Oturum",
+    historyPastBadge: "Süresi Doldu",
+    downloadAgain: "İndir",
+    convertAgain: "Tekrar Dönüştür",
+    historyFailed: "Başarısız"
+  },
+  fr: {
+    banner: "CONVERTISSEUR DE DOCUMENTS GRATUIT",
+    secureLocal: "LOCAL SÉCURISÉ",
+    tagline: "Conversion de documents locale ultra-rapide. Tout est traité directement dans votre navigateur.",
+    instantWasm: "⚡ WEBASSEMBLY INSTANTANÉ",
+    queueTitle: "File d'attente de conversion",
+    filesCountSingle: "fichier",
+    filesCountPlural: "fichiers",
+    convertAll: "Tout convertir",
+    downloadAll: "Tout télécharger",
+    clearAll: "Tout effacer",
+    privateTitle: "100% Privé",
+    privateDesc: "Toutes les transformations ont lieu localement sur votre système via WebAssembly. Vos données sensibles ne sont jamais envoyées à un serveur.",
+    instantTitle: "Conversion Instantanée",
+    instantDesc: "Pas de latence réseau ni de files d'attente. Le traitement des documents se termine instantanément en quelques secondes.",
+    previewTitle: "Aperçus Locaux",
+    previewDesc: "Inspectez les feuilles, lisez les documents texte et visualisez les images haute résolution directement dans notre lecteur interactif.",
+    historyTitle: "Historique de conversion",
+    historyEmpty: "Aucun historique de conversion pour le moment. Glissez-déposez des fichiers ci-dessus pour commencer !",
+    clearHistory: "Effacer l'historique",
+    historyOriginal: "Fichier d'origine",
+    historyConverted: "Fichier converti",
+    historySize: "Taille",
+    historyDate: "Date",
+    historyStatus: "Statut",
+    historyAction: "Action",
+    historySessionBadge: "Session active",
+    historyPastBadge: "Expiré",
+    downloadAgain: "Télécharger",
+    convertAgain: "Reconvertir",
+    historyFailed: "Échoué"
+  },
+  de: {
+    banner: "KOSTENLOSER DOKUMENTENKONVERTER",
+    secureLocal: "SICHER LOKAL",
+    tagline: "Blitzschnelle lokale Dokumentenkonvertierung. Alle Prozesse werden direkt in Ihrem Browser ausgeführt.",
+    instantWasm: "⚡ SOFORTIGES WEBASSEMBLY",
+    queueTitle: "Konvertierungswarteschlange",
+    filesCountSingle: "Datei",
+    filesCountPlural: "Dateien",
+    convertAll: "Alle konvertieren",
+    downloadAll: "Alle herunterladen",
+    clearAll: "Alle löschen",
+    privateTitle: "100% Privat",
+    privateDesc: "Alle Konvertierungen finden lokal auf Ihrem System mit WebAssembly statt. Ihre sensiblen Daten werden niemals auf einen Server hochgeladen.",
+    instantTitle: "Sofortige Konvertierung",
+    instantDesc: "Keine Netzwerkverzögerungen, Upload-Buffer oder Wartezeiten in Server-Warteschlangen. Die Verarbeitung erfolgt in wenigen Sekunden.",
+    previewTitle: "Lokale Vorschau",
+    previewDesc: "Prüfen Sie Tabellen, lesen Sie Textdokumente und betrachten Sie hochauflösende Bilder direkt in unserem interaktiven Player.",
+    historyTitle: "Konvertierungsverlauf",
+    historyEmpty: "Noch kein Konvertierungsverlauf. Ziehen Sie oben Dateien hinein, um zu konvertieren!",
+    clearHistory: "Verlauf löschen",
+    historyOriginal: "Originaldatei",
+    historyConverted: "Konvertierte Datei",
+    historySize: "Größe",
+    historyDate: "Datum",
+    historyStatus: "Status",
+    historyAction: "Aktion",
+    historySessionBadge: "Aktive Sitzung",
+    historyPastBadge: "Abgelaufen",
+    downloadAgain: "Herunterladen",
+    convertAgain: "Erneut konvertieren",
+    historyFailed: "Fehlgeschlagen"
+  }
+};
+
+interface HistoryItem {
+  id: string;
+  originalName: string;
+  convertedName: string;
+  fromFormat: string;
+  toFormat: string;
+  size: number;
+  timestamp: number;
+  status: 'completed' | 'failed';
+  error?: string;
+}
 
 export default function App() {
+  const [lang, setLang] = useState<'en' | 'tr' | 'fr' | 'de'>(() => {
+    const saved = localStorage.getItem('swift_shift_lang');
+    return (saved as 'en' | 'tr' | 'fr' | 'de') || 'en';
+  });
+
+  const [isLangOpen, setIsLangOpen] = useState(false);
+  const langDropdownRef = useRef<HTMLDivElement>(null);
+
+  const [history, setHistory] = useState<HistoryItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('swift_shift_history');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [sessionBlobs, setSessionBlobs] = useState<Record<string, { url: string; name: string }>>({});
+
+  useEffect(() => {
+    localStorage.setItem('swift_shift_history', JSON.stringify(history));
+  }, [history]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (langDropdownRef.current && !langDropdownRef.current.contains(event.target as Node)) {
+        setIsLangOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  const handleSetLang = (newLang: 'en' | 'tr' | 'fr' | 'de') => {
+    setLang(newLang);
+    localStorage.setItem('swift_shift_lang', newLang);
+    setIsLangOpen(false);
+  };
+
   const [files, setFiles] = useState<FileItem[]>([]);
   const [previewItem, setPreviewItem] = useState<FileItem | null>(null);
   const [isBulkConverting, setIsBulkConverting] = useState(false);
+
+  const t = translations[lang] || translations.en;
 
   // Handle files when dropped or selected
   const handleAddFiles = (newFiles: File[]) => {
@@ -64,6 +303,13 @@ export default function App() {
   const handleUpdateTargetFormat = (id: string, format: string) => {
     setFiles(prev => prev.map(item => 
       item.id === id ? { ...item, targetFormat: format } : item
+    ));
+  };
+
+  // Update target language for a specific file
+  const handleUpdateTargetLanguage = (id: string, language: string) => {
+    setFiles(prev => prev.map(item => 
+      item.id === id ? { ...item, targetLanguage: language } : item
     ));
   };
 
@@ -120,6 +366,26 @@ export default function App() {
       setFiles(prev => prev.map(f => 
         f.id === id ? { ...f, status: 'completed', progress: 100, convertedResult } : f
       ));
+
+      // Append to history log
+      const historyId = crypto.randomUUID();
+      const historyItem: HistoryItem = {
+        id: historyId,
+        originalName: fileItem.name,
+        convertedName: convertedResult.name,
+        fromFormat: fileItem.extension.toUpperCase(),
+        toFormat: fileItem.targetFormat!.toUpperCase(),
+        size: fileItem.size,
+        timestamp: Date.now(),
+        status: 'completed'
+      };
+      setHistory(prev => [historyItem, ...prev]);
+
+      // Map session blob for re-downloading
+      setSessionBlobs(prev => ({
+        ...prev,
+        [historyId]: { url: convertedResult.url, name: convertedResult.name }
+      }));
     } catch (err: any) {
       console.error('Conversion error:', err);
       setFiles(prev => prev.map(f => 
@@ -129,6 +395,20 @@ export default function App() {
           error: err.message || 'An error occurred during conversion' 
         } : f
       ));
+
+      // Append failed conversion to history
+      const historyItem: HistoryItem = {
+        id: crypto.randomUUID(),
+        originalName: fileItem.name,
+        convertedName: '—',
+        fromFormat: fileItem.extension.toUpperCase(),
+        toFormat: fileItem.targetFormat!.toUpperCase(),
+        size: fileItem.size,
+        timestamp: Date.now(),
+        status: 'failed',
+        error: err.message || 'Conversion failed'
+      };
+      setHistory(prev => [historyItem, ...prev]);
     }
   };
 
@@ -172,16 +452,61 @@ export default function App() {
     let previewContent: string | undefined;
     let multipleFiles: ConvertedResult['multipleFiles'] | undefined;
 
+    let finalSourceFile = item.file;
+
+    // Apply pre-conversion translation if targetLanguage is set
+    if (item.targetLanguage) {
+      onProgress(10);
+      if (['txt', 'md', 'json', 'html', 'csv'].includes(ext)) {
+        const originalText = await item.file.text();
+        const translatedText = await translateTextContent(originalText, item.targetLanguage, ext);
+        finalSourceFile = new File([translatedText], item.name, { type: item.file.type });
+      } else if (['xlsx', 'xls'].includes(ext)) {
+        const wb = await parseSpreadsheet(item.file);
+        const sheetName = wb.SheetNames[0];
+        const ws = wb.Sheets[sheetName];
+        const data = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1 });
+        
+        const translatedData = await translateSpreadsheetData(data, item.targetLanguage);
+        
+        // Re-encode to a temporary xlsx File
+        const tempWs = XLSX.utils.aoa_to_sheet(translatedData);
+        const tempWb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(tempWb, tempWs, 'Sheet 1');
+        const out = XLSX.write(tempWb, { bookType: 'xlsx', type: 'array' });
+        const translatedBlob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        
+        finalSourceFile = new File([translatedBlob], item.name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      }
+      onProgress(40);
+    }
+
     // 1. PDF Sources
     if (ext === 'pdf') {
       if (target === 'png' || target === 'jpg') {
-        const imgPages = await convertPdfToImages(item.file, target, onProgress);
+        const imgPages = await convertPdfToImages(finalSourceFile, target, onProgress);
         if (imgPages.length === 0) throw new Error('Failed to render PDF pages to images');
         resultBlob = imgPages[0].blob; // Default fallback to first page
         multipleFiles = imgPages;
       } else if (target === 'txt') {
-        resultBlob = await convertPdfToText(item.file, onProgress);
-        previewContent = await resultBlob.text();
+        resultBlob = await convertPdfToText(finalSourceFile, onProgress);
+        let txt = await resultBlob.text();
+        if (item.targetLanguage) {
+          txt = await translateTextContent(txt, item.targetLanguage, 'txt');
+          resultBlob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
+        }
+        previewContent = txt;
+      } else if (target === 'docx') {
+        const textBlob = await convertPdfToText(finalSourceFile, onProgress);
+        const txt = await textBlob.text();
+        const htmlBody = `<p>${txt.replace(/\n/g, '<br>')}</p>`;
+        resultBlob = convertHtmlToDocx(htmlBody);
+        previewContent = htmlBody;
+      } else if (target === 'pptx') {
+        const textBlob = await convertPdfToText(finalSourceFile, onProgress);
+        const txt = await textBlob.text();
+        resultBlob = convertTextToPptx(txt, finalSourceFile.name);
+        previewContent = txt;
       } else {
         throw new Error(`Conversion from PDF to ${target.toUpperCase()} is not supported.`);
       }
@@ -189,68 +514,209 @@ export default function App() {
     // 2. Spreadsheet Sources (xlsx, xls, csv)
     else if (['xlsx', 'xls', 'csv'].includes(ext)) {
       if (target === 'pdf') {
-        resultBlob = await convertSpreadsheetToPdf(item.file, onProgress);
+        resultBlob = await convertSpreadsheetToPdf(finalSourceFile, onProgress);
       } else if (target === 'csv') {
-        resultBlob = await convertSpreadsheetToCsv(item.file);
+        resultBlob = await convertSpreadsheetToCsv(finalSourceFile);
         previewContent = await resultBlob.text();
       } else if (target === 'json') {
-        resultBlob = await convertSpreadsheetToJson(item.file);
+        resultBlob = await convertSpreadsheetToJson(finalSourceFile);
         previewContent = await resultBlob.text();
       } else if (target === 'html') {
-        resultBlob = await convertSpreadsheetToHtml(item.file);
-        previewContent = await convertSpreadsheetToHtmlString(item.file);
+        resultBlob = await convertSpreadsheetToHtml(finalSourceFile);
+        previewContent = await convertSpreadsheetToHtmlString(finalSourceFile);
+      } else if (target === 'xml') {
+        const wb = await parseSpreadsheet(finalSourceFile);
+        const xmlStr = workbookToXml(wb);
+        resultBlob = new Blob([xmlStr], { type: 'application/xml;charset=utf-8' });
+        previewContent = xmlStr;
       } else if (ext === 'csv' && target === 'xlsx') {
-        resultBlob = await convertCsvToXlsx(item.file);
+        resultBlob = await convertCsvToXlsx(finalSourceFile);
       } else {
         throw new Error(`Conversion from spreadsheet to ${target.toUpperCase()} is not supported.`);
       }
     }
-    // 3. Text & Markup Sources (txt, md, json, html)
-    else if (['txt', 'md', 'json', 'html'].includes(ext)) {
-      const textContent = await item.file.text();
-      
-      if (ext === 'json') {
-        if (target === 'csv' || target === 'xlsx') {
-          resultBlob = await convertJsonToSpreadsheet(item.file, target);
-          if (target === 'csv') previewContent = await resultBlob.text();
+    // 3. Text & Markup Sources (txt, md, json, html, xml, rtf, docx, pptx)
+    else if (['txt', 'md', 'json', 'html', 'xml', 'rtf', 'docx', 'pptx'].includes(ext)) {
+      if (ext === 'docx') {
+        const docxText = await parseDocxText(finalSourceFile);
+        if (target === 'pdf') {
+          resultBlob = convertTextToPdf(docxText, finalSourceFile.name, false);
         } else if (target === 'txt') {
+          resultBlob = new Blob([docxText], { type: 'text/plain;charset=utf-8' });
+          previewContent = docxText;
+        } else if (target === 'html') {
+          const htmlBody = `<p>${docxText.replace(/\n/g, '<br>')}</p>`;
+          resultBlob = new Blob([htmlBody], { type: 'text/html;charset=utf-8' });
+          previewContent = htmlBody;
+        } else {
+          throw new Error(`Unsupported DOCX target format: ${target.toUpperCase()}`);
+        }
+      } else if (ext === 'pptx') {
+        const pptxText = await parsePptxText(finalSourceFile);
+        if (target === 'pdf') {
+          resultBlob = convertTextToPdf(pptxText, finalSourceFile.name, false);
+        } else if (target === 'txt') {
+          resultBlob = new Blob([pptxText], { type: 'text/plain;charset=utf-8' });
+          previewContent = pptxText;
+        } else {
+          throw new Error(`Unsupported PPTX target format: ${target.toUpperCase()}`);
+        }
+      } else {
+        const textContent = await finalSourceFile.text();
+        
+        if (target === 'docx') {
+          let htmlBody = '';
+          if (ext === 'md') {
+            htmlBody = markdownToHtml(textContent);
+          } else if (ext === 'html') {
+            htmlBody = textContent;
+          } else {
+            htmlBody = `<p>${textContent.replace(/\n/g, '<br>')}</p>`;
+          }
+          resultBlob = convertHtmlToDocx(htmlBody);
+          previewContent = htmlBody;
+        } else if (target === 'pptx') {
+          resultBlob = convertTextToPptx(textContent, finalSourceFile.name);
+          previewContent = textContent;
+        } else if (ext === 'json') {
+          if (target === 'csv' || target === 'xlsx') {
+            resultBlob = await convertJsonToSpreadsheet(finalSourceFile, target);
+            if (target === 'csv') previewContent = await resultBlob.text();
+          } else if (target === 'txt') {
+            resultBlob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
+            previewContent = textContent;
+          } else if (target === 'xml') {
+            const xmlStr = jsonToXml(textContent);
+            resultBlob = new Blob([xmlStr], { type: 'application/xml;charset=utf-8' });
+            previewContent = xmlStr;
+          } else {
+            throw new Error(`Unsupported JSON target format: ${target.toUpperCase()}`);
+          }
+        } else if (ext === 'xml') {
+          if (target === 'json') {
+            const jsonStr = xmlToJson(textContent);
+            resultBlob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+            previewContent = jsonStr;
+          } else if (target === 'csv') {
+            const jsonStr = xmlToJson(textContent);
+            resultBlob = await convertJsonToSpreadsheet(new File([jsonStr], 'temp.json', { type: 'application/json' }), 'csv');
+            previewContent = await resultBlob.text();
+          } else if (target === 'txt') {
+            const plainText = textContent.replace(/<[^>]+>/g, '').trim();
+            resultBlob = new Blob([plainText], { type: 'text/plain;charset=utf-8' });
+            previewContent = plainText;
+          } else {
+            throw new Error(`Unsupported XML target format: ${target.toUpperCase()}`);
+          }
+        } else if (ext === 'rtf') {
+          const plainText = rtfToText(textContent);
+          if (target === 'txt') {
+            resultBlob = new Blob([plainText], { type: 'text/plain;charset=utf-8' });
+            previewContent = plainText;
+          } else if (target === 'pdf') {
+            resultBlob = convertTextToPdf(plainText, finalSourceFile.name, false);
+          } else if (target === 'html') {
+            const htmlBody = `<p>${plainText.replace(/\n/g, '<br>')}</p>`;
+            resultBlob = new Blob([htmlBody], { type: 'text/html;charset=utf-8' });
+            previewContent = htmlBody;
+          } else {
+            throw new Error(`Unsupported RTF target format: ${target.toUpperCase()}`);
+          }
+        } else if (target === 'pdf') {
+          resultBlob = convertTextToPdf(textContent, finalSourceFile.name, ext === 'md');
+        } else if (ext === 'md' && target === 'html') {
+          const htmlBody = markdownToHtml(textContent);
+          const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${htmlBody}</body></html>`;
+          resultBlob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
+          previewContent = htmlBody;
+        } else if (ext === 'md' && target === 'txt') {
           resultBlob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
           previewContent = textContent;
+        } else if (ext === 'md' && target === 'rtf') {
+          const rtfStr = markdownToRtf(textContent);
+          resultBlob = new Blob([rtfStr], { type: 'application/rtf;charset=utf-8' });
+          previewContent = rtfStr;
+        } else if (ext === 'html' && target === 'md') {
+          const mdBody = htmlToMarkdown(textContent);
+          resultBlob = new Blob([mdBody], { type: 'text/markdown;charset=utf-8' });
+          previewContent = mdBody;
+        } else if (ext === 'html' && target === 'txt') {
+          const plainText = htmlToMarkdown(textContent);
+          resultBlob = new Blob([plainText], { type: 'text/plain;charset=utf-8' });
+          previewContent = plainText;
+        } else if (ext === 'html' && target === 'rtf') {
+          const plainText = htmlToMarkdown(textContent);
+          const rtfStr = markdownToRtf(plainText);
+          resultBlob = new Blob([rtfStr], { type: 'application/rtf;charset=utf-8' });
+          previewContent = rtfStr;
+        } else if (ext === 'txt' && target === 'md') {
+          resultBlob = new Blob([textContent], { type: 'text/markdown;charset=utf-8' });
+          previewContent = textContent;
+        } else if (ext === 'txt' && target === 'html') {
+          const htmlBody = `<p>${textContent.replace(/\n/g, '<br>')}</p>`;
+          resultBlob = new Blob([htmlBody], { type: 'text/html;charset=utf-8' });
+          previewContent = htmlBody;
+        } else if (ext === 'txt' && target === 'rtf') {
+          const rtfStr = markdownToRtf(textContent);
+          resultBlob = new Blob([rtfStr], { type: 'application/rtf;charset=utf-8' });
+          previewContent = rtfStr;
+        } else if (ext === 'txt' && target === 'json') {
+          let jsonStr = '';
+          try {
+            JSON.parse(textContent);
+            jsonStr = textContent;
+          } catch {
+            jsonStr = JSON.stringify({ content: textContent }, null, 2);
+          }
+          resultBlob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+          previewContent = jsonStr;
+        } else if (ext === 'txt' && target === 'xml') {
+          const xmlStr = `<?xml version="1.0" encoding="UTF-8"?>\n<document>\n  <body>${textContent.replace(/[<>&'"]/g, c => {
+            switch (c) {
+              case '<': return '&lt;';
+              case '>': return '&gt;';
+              case '&': return '&amp;';
+              case '\'': return '&apos;';
+              case '"': return '&quot;';
+              default: return c;
+            }
+          })}</body>\n</document>`;
+          resultBlob = new Blob([xmlStr], { type: 'application/xml;charset=utf-8' });
+          previewContent = xmlStr;
         } else {
-          throw new Error(`Unsupported JSON target format: ${target.toUpperCase()}`);
+          throw new Error(`Unsupported text conversion target: ${target.toUpperCase()}`);
         }
-      } else if (target === 'pdf') {
-        resultBlob = convertTextToPdf(textContent, item.file.name, ext === 'md');
-      } else if (ext === 'md' && target === 'html') {
-        const htmlBody = markdownToHtml(textContent);
-        const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${htmlBody}</body></html>`;
-        resultBlob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
-        previewContent = htmlBody;
-      } else if (ext === 'md' && target === 'txt') {
-        resultBlob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
-        previewContent = textContent;
-      } else if (ext === 'html' && target === 'md') {
-        const mdBody = htmlToMarkdown(textContent);
-        resultBlob = new Blob([mdBody], { type: 'text/markdown;charset=utf-8' });
-        previewContent = mdBody;
-      } else if (ext === 'html' && target === 'txt') {
-        const plainText = htmlToMarkdown(textContent);
-        resultBlob = new Blob([plainText], { type: 'text/plain;charset=utf-8' });
-        previewContent = plainText;
-      } else if (ext === 'txt' && target === 'md') {
-        resultBlob = new Blob([textContent], { type: 'text/markdown;charset=utf-8' });
-        previewContent = textContent;
-      } else if (ext === 'txt' && target === 'html') {
-        const htmlBody = `<p>${textContent.replace(/\n/g, '<br>')}</p>`;
-        resultBlob = new Blob([htmlBody], { type: 'text/html;charset=utf-8' });
-        previewContent = htmlBody;
-      } else {
-        throw new Error(`Unsupported text conversion target: ${target.toUpperCase()}`);
       }
     }
     // 4. Image Sources (png, jpg, jpeg, webp, gif, bmp)
     else if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext)) {
-      resultBlob = await convertImage(item.file, target, onProgress);
+      if (target === 'mp4') {
+        resultBlob = await convertImageToVideo(finalSourceFile, onProgress);
+      } else {
+        resultBlob = await convertImage(finalSourceFile, target, onProgress);
+      }
+    }
+    // 5. Media Sources (mp3, mp4, wav)
+    else if (['mp3', 'mp4', 'wav'].includes(ext)) {
+      if (ext === 'mp4') {
+        if (target === 'mp3') {
+          resultBlob = await extractAudioFromVideo(finalSourceFile, onProgress);
+        } else if (target === 'gif') {
+          throw new Error('Please select MP4 to MP3 extraction, or use audio files.');
+        } else {
+          throw new Error(`Unsupported MP4 target format: ${target.toUpperCase()}`);
+        }
+      } else if (ext === 'mp3' || ext === 'wav') {
+        if (target === 'mp4') {
+          resultBlob = await createAudioVisualizerVideo(finalSourceFile, onProgress);
+        } else if (target === 'wav' && ext === 'mp3') {
+          resultBlob = await extractAudioFromVideo(finalSourceFile, onProgress);
+        } else if (target === 'mp3' && ext === 'wav') {
+          resultBlob = new Blob([await finalSourceFile.arrayBuffer()], { type: 'audio/wav' });
+        } else {
+          throw new Error(`Unsupported audio conversion from ${ext.toUpperCase()} to ${target.toUpperCase()}`);
+        }
+      }
     } else {
       throw new Error('Unsupported source file format');
     }
@@ -283,46 +749,105 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#FFFBEB] flex flex-col font-sans text-slate-900 selection:bg-indigo-600 selection:text-white" id="root-container">
       {/* Top Banner Ticker */}
-      <div className="bg-slate-900 text-amber-300 py-2.5 px-6 border-b-4 border-slate-900 text-[11px] sm:text-xs font-black uppercase tracking-widest overflow-hidden flex items-center justify-center gap-8 shadow-sm">
-        <div className="flex items-center gap-1.5"><span className="text-rose-500">★</span> ISO-27001 Certified</div>
-        <div className="hidden sm:flex items-center gap-1.5"><span className="text-emerald-400">★</span> 100% Client-Side Processing</div>
-        <div className="flex items-center gap-1.5"><span className="text-indigo-400">★</span> Zero File Uploads</div>
+      <div className="bg-slate-900 text-amber-300 py-2 px-6 border-b-4 border-slate-900 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 shadow-sm">
+        <span>★</span>
+        <span>{t.banner}</span>
+        <span>★</span>
       </div>
 
       {/* Main Core View Area */}
       <div className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-8 md:p-12 flex flex-col gap-10">
         
-        {/* App Branding & Header - Neobrutalist Nav Card */}
-        <div className="bg-white border-4 border-slate-900 rounded-3xl p-6 sm:p-8 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="flex items-start sm:items-center gap-4">
-            <div className="p-3 bg-indigo-600 text-white rounded-xl border-2 border-slate-900 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] transform -rotate-3 flex-shrink-0">
-              <FileCheck className="w-8 h-8" />
-            </div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 flex flex-wrap items-center gap-2">
-                SWIFT.SHIFT
-                <span className="flex items-center gap-1 text-[10px] font-black bg-rose-500 text-white border-2 border-slate-900 p-1 px-2.5 rounded-full uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                  <Shield className="w-3 h-3" /> SECURE LOCAL
-                </span>
-              </h1>
-              <p className="text-xs sm:text-sm text-slate-600 font-bold mt-1.5 leading-relaxed">
-                Lightning-fast local document conversion. All process completed directly inside your browser.
-              </p>
-            </div>
-          </div>
+        {/* App Branding & Header - Neobrutalist Nav Card with Hollow Shadow */}
+        <div className="relative">
+          {/* Hollow Shadow */}
+          <div className="absolute inset-0 border-4 border-slate-900 rounded-3xl translate-x-2 translate-y-2 -z-10 bg-transparent" />
           
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="inline-block px-3.5 py-1.5 bg-amber-200 text-amber-900 rounded-xl font-extrabold text-xs uppercase tracking-wider border-2 border-slate-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-              ⚡ Instant WebAssembly
+          <div className="bg-white border-4 border-slate-900 rounded-3xl p-6 sm:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="flex items-start sm:items-center gap-4">
+              <div className="p-3 bg-indigo-600 text-white rounded-xl border-2 border-slate-900 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] transform -rotate-3 flex-shrink-0">
+                <FileCheck className="w-8 h-8" />
+              </div>
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 flex flex-wrap items-center gap-2">
+                  SWIFT.SHIFT
+                  <span className="flex items-center gap-1 text-[10px] font-black bg-slate-950 text-white border-2 border-slate-900 p-1 px-2.5 rounded-full uppercase tracking-wider">
+                    <Shield className="w-3 h-3" /> {t.secureLocal}
+                  </span>
+                </h1>
+                <p className="text-xs sm:text-sm text-slate-600 font-bold mt-1.5 leading-relaxed">
+                  {t.tagline}
+                </p>
+
+                {/* Circular Language Selector Dropdown */}
+                <div className="mt-4 flex flex-wrap items-center gap-2.5 relative" id="language-switcher" ref={langDropdownRef}>
+                  <span className="text-xs font-bold text-slate-500">{langLabels[lang]}</span>
+                  <div className="relative">
+                    {/* Round button representing selected language flag */}
+                    <button
+                      onClick={() => setIsLangOpen(!isLangOpen)}
+                      className="w-10 h-10 rounded-full border-2 border-slate-900 bg-amber-100 hover:bg-amber-200 flex items-center justify-center text-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all hover:translate-y-[-1px] hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] focus:outline-none cursor-pointer"
+                      title={lang === 'en' ? 'English' : lang === 'tr' ? 'Türkçe' : lang === 'fr' ? 'Français' : 'Deutsch'}
+                    >
+                      {lang === 'en' ? '🇬🇧' : lang === 'tr' ? '🇹🇷' : lang === 'fr' ? '🇫🇷' : '🇩🇪'}
+                    </button>
+
+                    {/* Popover Dropdown menu */}
+                    <AnimatePresence>
+                      {isLangOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                          transition={{ duration: 0.12 }}
+                          className="absolute left-0 mt-2 w-44 bg-white border-2 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-50 overflow-hidden"
+                        >
+                          <div className="p-1 flex flex-col gap-1">
+                            {(['en', 'tr', 'fr', 'de'] as const).map((l) => (
+                              <button
+                                key={l}
+                                onClick={() => handleSetLang(l)}
+                                className={`flex items-center gap-2.5 w-full text-left px-3 py-2 text-xs font-black rounded-lg transition-colors cursor-pointer ${
+                                  lang === l
+                                    ? 'bg-amber-100 text-slate-950'
+                                    : 'bg-transparent text-slate-700 hover:bg-slate-100'
+                                }`}
+                              >
+                                <span className="text-base leading-none">
+                                  {l === 'en' ? '🇬🇧' : l === 'tr' ? '🇹🇷' : l === 'fr' ? '🇫🇷' : '🇩🇪'}
+                                </span>
+                                <span>
+                                  {l === 'en' ? 'English' : l === 'tr' ? 'Türkçe' : l === 'fr' ? 'Français' : 'Deutsch'}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+
+              </div>
             </div>
-            <GoogleAuth />
+            
+            <div className="flex flex-col sm:items-end gap-3 flex-shrink-0">
+              {/* Instant WebAssembly Badge with Hollow Shadow */}
+              <div className="relative">
+                <div className="absolute inset-0 border-2 border-slate-900 rounded-full translate-x-1 translate-y-1 -z-10 bg-transparent" />
+                <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-400 text-slate-950 rounded-full font-black text-xs uppercase tracking-wider border-2 border-slate-900">
+                  {t.instantWasm}
+                </div>
+              </div>
+              <GoogleAuth />
+            </div>
           </div>
         </div>
 
         {/* Dynamic Workspace Container */}
         <div className="flex flex-col gap-10 w-full">
           {/* File Dropzone */}
-          <DropZone onFilesSelected={handleAddFiles} />
+          <DropZone onFilesSelected={handleAddFiles} lang={lang} />
 
           {/* Queue List Panel */}
           {files.length > 0 && (
@@ -336,10 +861,10 @@ export default function App() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b-4 border-slate-900 pb-5 gap-4">
                 <div className="flex items-center gap-3">
                   <h2 className="text-lg font-black text-slate-900 tracking-tight">
-                    File Conversion Queue
+                    {t.queueTitle}
                   </h2>
                   <span className="text-xs font-black text-slate-900 bg-amber-300 border-2 border-slate-900 p-1 px-3 rounded-full shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                    {files.length} {files.length === 1 ? 'file' : 'files'}
+                    {files.length} {files.length === 1 ? t.filesCountSingle : t.filesCountPlural}
                   </span>
                 </div>
 
@@ -356,7 +881,7 @@ export default function App() {
                       ) : (
                         <Sparkles className="w-3.5 h-3.5" />
                       )}
-                      <span>Convert All ({idleCount})</span>
+                      <span>{t.convertAll} ({idleCount})</span>
                     </button>
                   )}
 
@@ -366,7 +891,7 @@ export default function App() {
                       className="flex items-center gap-2 p-2.5 px-5 text-xs font-bold text-slate-900 bg-indigo-300 hover:bg-indigo-200 border-2 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[4px] active:shadow-none transition-all cursor-pointer"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      <span>Download All ({completedCount})</span>
+                      <span>{t.downloadAll} ({completedCount})</span>
                     </button>
                   )}
 
@@ -376,7 +901,7 @@ export default function App() {
                     className="flex items-center gap-2 p-2.5 px-5 text-xs font-bold text-slate-700 bg-rose-100 hover:bg-rose-200 border-2 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[4px] active:shadow-none transition-all cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                    <span>Clear All</span>
+                    <span>{t.clearAll}</span>
                   </button>
                 </div>
               </div>
@@ -389,12 +914,113 @@ export default function App() {
                       key={item.id}
                       item={item}
                       onUpdateTargetFormat={handleUpdateTargetFormat}
+                      onUpdateTargetLanguage={handleUpdateTargetLanguage}
                       onStartConversion={startConversion}
                       onRemove={handleRemoveFile}
                       onPreview={(itm) => setPreviewItem(itm)}
                     />
                   ))}
                 </AnimatePresence>
+              </div>
+            </motion.div>
+          )}
+
+          {/* History Panel */}
+          {history.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white border-4 border-slate-900 rounded-3xl p-6 sm:p-8 shadow-[12px_12px_0px_0px_rgba(245,158,11,1)] flex flex-col gap-6"
+              id="conversion-history-container"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b-4 border-slate-900 pb-5 gap-4">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-lg font-black text-slate-900 tracking-tight">
+                    {t.historyTitle}
+                  </h2>
+                  <span className="text-xs font-black text-slate-900 bg-amber-300 border-2 border-slate-900 p-1 px-3 rounded-full shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                    {history.length}
+                  </span>
+                </div>
+
+                <button
+                  onClick={() => setHistory([])}
+                  className="flex items-center gap-2 p-2 px-4 text-xs font-bold text-slate-700 bg-rose-100 hover:bg-rose-200 border-2 border-slate-900 rounded-xl shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[1px] hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[3px] active:shadow-none transition-all cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{t.clearHistory}</span>
+                </button>
+              </div>
+
+              {/* History Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[600px]">
+                  <thead>
+                    <tr className="border-b-2 border-slate-900 text-xs font-black text-slate-500 uppercase tracking-wider">
+                      <th className="py-3 px-4">{t.historyOriginal}</th>
+                      <th className="py-3 px-4">{t.historyConverted}</th>
+                      <th className="py-3 px-4">{t.historySize}</th>
+                      <th className="py-3 px-4">{t.historyDate}</th>
+                      <th className="py-3 px-4">{t.historyStatus}</th>
+                      <th className="py-3 px-4 text-right">{t.historyAction}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-xs font-bold text-slate-700 divide-y divide-slate-100">
+                    {history.map((item) => {
+                      const isSessionActive = !!sessionBlobs[item.id];
+                      return (
+                        <tr key={item.id} className="hover:bg-amber-50/50 transition-colors">
+                          <td className="py-4 px-4 font-black text-slate-900 max-w-[200px] truncate" title={item.originalName}>
+                            {item.originalName}
+                          </td>
+                          <td className="py-4 px-4 text-indigo-600 max-w-[200px] truncate" title={item.convertedName}>
+                            {item.convertedName}
+                          </td>
+                          <td className="py-4 px-4 text-slate-500">
+                            {formatBytes(item.size)}
+                          </td>
+                          <td className="py-4 px-4 text-slate-500">
+                            {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{' '}
+                            <span className="text-[10px] text-slate-400 font-normal">
+                              ({new Date(item.timestamp).toLocaleDateString()})
+                            </span>
+                          </td>
+                          <td className="py-4 px-4">
+                            {item.status === 'completed' ? (
+                              <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 p-1 px-2.5 rounded-full text-[10px] font-black uppercase tracking-wider">
+                                {t.historySessionBadge}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 border border-rose-300 p-1 px-2.5 rounded-full text-[10px] font-black uppercase tracking-wider">
+                                {t.historyFailed}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-4 px-4 text-right">
+                            {item.status === 'completed' && isSessionActive ? (
+                              <a
+                                href={sessionBlobs[item.id].url}
+                                download={sessionBlobs[item.id].name}
+                                className="inline-flex items-center gap-1.5 p-1.5 px-3 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 border-2 border-slate-900 rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer font-black text-[10px] uppercase"
+                              >
+                                <Download className="w-3 h-3" />
+                                <span>{t.downloadAgain}</span>
+                              </a>
+                            ) : item.status === 'completed' ? (
+                              <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-400 border border-slate-200 p-1 px-2.5 rounded-full text-[10px] font-black uppercase tracking-wider">
+                                {t.historyPastBadge}
+                              </span>
+                            ) : (
+                              <span className="text-rose-500 text-[10px] uppercase tracking-wide font-black" title={item.error}>
+                                {item.error || 'ERROR'}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </motion.div>
           )}
@@ -407,9 +1033,9 @@ export default function App() {
               <Shield className="w-6 h-6 text-slate-900" />
             </div>
             <div>
-              <h3 className="text-base font-black text-slate-900 tracking-tight">100% Private</h3>
+              <h3 className="text-base font-black text-slate-900 tracking-tight">{t.privateTitle}</h3>
               <p className="text-xs text-slate-600 font-bold mt-1.5 leading-relaxed">
-                All transformations happen locally on your system using WebAssembly and client-side modules. Your sensitive data is never uploaded to any server.
+                {t.privateDesc}
               </p>
             </div>
           </div>
@@ -419,9 +1045,9 @@ export default function App() {
               <Zap className="w-6 h-6 text-slate-900" />
             </div>
             <div>
-              <h3 className="text-base font-black text-slate-900 tracking-tight">Instant Conversion</h3>
+              <h3 className="text-base font-black text-slate-900 tracking-tight">{t.instantTitle}</h3>
               <p className="text-xs text-slate-600 font-bold mt-1.5 leading-relaxed">
-                No network delays, upload buffers, or wait times in server queues. Document processing finishes instantly in a matter of seconds.
+                {t.instantDesc}
               </p>
             </div>
           </div>
@@ -431,9 +1057,9 @@ export default function App() {
               <Sparkles className="w-6 h-6 text-slate-900" />
             </div>
             <div>
-              <h3 className="text-base font-black text-slate-900 tracking-tight">Local Previews</h3>
+              <h3 className="text-base font-black text-slate-900 tracking-tight">{t.previewTitle}</h3>
               <p className="text-xs text-slate-600 font-bold mt-1.5 leading-relaxed">
-                Inspect sheets, read text documents, parse markup, and view high-resolution page-by-page images directly in our interactive lightbox player.
+                {t.previewDesc}
               </p>
             </div>
           </div>
@@ -441,23 +1067,15 @@ export default function App() {
 
         {/* Footnote */}
         <div className="text-center py-4">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-            ★ Powered by Swift.Shift Client Engine v4.2 ★
-          </p>
         </div>
       </div>
 
       {/* Footer ticker banner */}
       <footer className="bg-slate-900 text-white border-t-4 border-slate-900 py-6 px-12 overflow-hidden mt-10">
-        <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="max-w-5xl mx-auto flex items-center justify-center">
           <p className="text-xs font-bold text-slate-400">
-            &copy; 2026 SWIFT.SHIFT. Neobrutalist design with 100% client-side compilation.
+            © 2026 SWIFT.SHIFT.
           </p>
-          <div className="flex flex-wrap items-center justify-center gap-6 text-[11px] font-black uppercase tracking-wider text-slate-400">
-            <span className="text-emerald-400">✔ ISO-27001 certified</span>
-            <span className="text-rose-400">✔ End-to-End Encrypted</span>
-            <span className="text-indigo-400">✔ Instant Deletion</span>
-          </div>
         </div>
       </footer>
 
