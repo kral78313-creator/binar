@@ -2,7 +2,8 @@ import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   File, FileText, FileSpreadsheet, Image as ImageIcon, 
-  Trash2, Play, CheckCircle2, AlertCircle, Download, Eye, RefreshCw 
+  Trash2, Play, CheckCircle2, AlertCircle, Download, Eye, RefreshCw,
+  Sparkles
 } from 'lucide-react';
 import { FileItem, CONVERSION_MAP, FORMAT_LABELS } from '../types';
 
@@ -14,6 +15,7 @@ interface FileItemRowProps {
   onStartConversion: (id: string) => void | Promise<void>;
   onRemove: (id: string) => void;
   onPreview: (item: FileItem) => void | any;
+  onSummarizePdf?: (item: FileItem) => void;
 }
 
 // Helper to check if file content language translation can be applied
@@ -54,7 +56,8 @@ export default function FileItemRow({
   onUpdateTargetLanguage,
   onStartConversion,
   onRemove,
-  onPreview
+  onPreview,
+  onSummarizePdf
 }: FileItemRowProps) {
   const extension = item.extension.toLowerCase();
   const availableFormats = CONVERSION_MAP[extension] || [];
@@ -145,6 +148,18 @@ export default function FileItemRow({
 
         {/* Status badges or Action buttons */}
         <div className="flex items-center gap-2">
+          {/* AI PDF Summarizer Trigger button */}
+          {extension === 'pdf' && onSummarizePdf && item.status !== 'converting' && (
+            <button
+              onClick={() => onSummarizePdf(item)}
+              className="flex items-center gap-1.5 p-2.5 px-3.5 text-xs font-black text-slate-950 bg-amber-300 hover:bg-amber-200 border-2 border-slate-900 rounded-xl shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[1px] hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[3px] active:shadow-none transition-all cursor-pointer mr-1"
+              title="Summarize with AI"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-indigo-600 fill-indigo-100" />
+              <span className="hidden sm:inline">AI SUMMARIZE</span>
+            </button>
+          )}
+
           {item.status === 'idle' && (
             <button
               onClick={() => onStartConversion(item.id)}

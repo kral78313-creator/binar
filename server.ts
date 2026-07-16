@@ -116,6 +116,52 @@ CRITICAL REQUIREMENTS:
     }
   });
 
+  app.post('/api/summarize-pdf', async (req, res) => {
+    try {
+      const { text, question } = req.body;
+      if (!text) {
+        return res.status(400).json({ error: 'Missing text content for summarization' });
+      }
+
+      const ai = getGenAI();
+
+      let systemInstruction = `You are an expert AI PDF Summarizer. Your goal is to provide extremely clear, structured, and easy-to-read summaries of PDF documents.
+Always structure your summary using markdown with:
+- A brief overarching executive summary (1-2 sentences)
+- Key Takeaways & Main Points (bulleted list)
+- Important Figures, Data, or Highlights (if applicable)
+- Actionable Conclusions or next steps (if applicable)
+
+Write the summary in the primary language detected in the document text unless specified otherwise. Keep the formatting clean and professional. Do not use verbose greetings or preambles, jump straight to the summary.`;
+
+      if (question) {
+        systemInstruction = `You are an expert AI assistant helping a user query a PDF document.
+Answer the user's question accurately based ON the provided PDF document text.
+If the answer cannot be found in the document, state that clearly but provide any helpful context if possible.
+Keep the explanation clear, professional, and well-structured using markdown.`;
+      }
+
+      const prompt = question 
+        ? `Document text:\n${text}\n\nQuestion: ${question}`
+        : `Please summarize the following document text:\n${text}`;
+
+      const response = await generateContentWithRetry(ai, {
+        model: 'gemini-3.5-flash',
+        contents: prompt,
+        config: {
+          systemInstruction,
+          temperature: 0.2,
+        }
+      });
+
+      const resultText = response.text || '';
+      res.json({ result: resultText });
+    } catch (error: any) {
+      console.error('PDF Summarization/QA error:', error);
+      res.status(500).json({ error: error.message || 'An error occurred during PDF summarization' });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

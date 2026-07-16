@@ -11,6 +11,8 @@ import DropZone from './components/DropZone';
 import FileItemRow, { formatBytes } from './components/FileItemRow';
 import PreviewModal from './components/PreviewModal';
 import GoogleAuth from './components/GoogleAuth';
+import { Flag } from './components/Flag';
+import AiPdfSummarizer from './components/AiPdfSummarizer';
 
 import * as XLSX from 'xlsx';
 
@@ -79,7 +81,8 @@ const langLabels = {
   en: "Change web page language:",
   tr: "Web sayfasının dilini değiştirin:",
   fr: "Changer la langue de la page web :",
-  de: "Sprache der Webseite ändern:"
+  de: "Sprache der Webseite ändern:",
+  ar: "تغيير لغة صفحة الويب:"
 };
 
 const translations = {
@@ -210,6 +213,38 @@ const translations = {
     downloadAgain: "Herunterladen",
     convertAgain: "Erneut konvertieren",
     historyFailed: "Fehlgeschlagen"
+  },
+  ar: {
+    banner: "محول المستندات المجاني",
+    secureLocal: "محلي آمن",
+    tagline: "تحويل مستندات محلي بسرعة فائقة. تكتمل جميع العمليات مباشرة داخل متصفحك.",
+    instantWasm: "⚡ ويب أسمبلي فوري",
+    queueTitle: "قائمة تحويل الملفات",
+    filesCountSingle: "ملف",
+    filesCountPlural: "ملفات",
+    convertAll: "تحويل الكل",
+    downloadAll: "تنزيل الكل",
+    clearAll: "مسح الكل",
+    privateTitle: "خاص وآمن 100%",
+    privateDesc: "تحدث جميع التحويلات محليًا على جهازك باستخدام WebAssembly والمودولات البرمجية الخاصة بجهة العميل. لا يتم رفع بياناتك الحساسة إلى أي خادم على الإطلاق.",
+    instantTitle: "تحويل فوري",
+    instantDesc: "لا يوجد تأخير في الشبكة، أو فترات انتظار في طوابير الخادم. تنتهي معالجة المستندات فورًا في غضون ثوانٍ.",
+    previewTitle: "معاينات محلية",
+    previewDesc: "تفقد جداول البيانات، واقرأ المستندات النصية، واعرض صور الصفحات بدقة عالية مباشرةً في نافذة المعاينة التفاعلية.",
+    historyTitle: "سجل التحويلات",
+    historyEmpty: "لا يوجد سجل للتحويلات بعد. قم بسحب وإسقاط الملفات أعلاه لبدء التحويل!",
+    clearHistory: "مسح السجل",
+    historyOriginal: "الملف الأصلي",
+    historyConverted: "الملف المحول",
+    historySize: "الحجم",
+    historyDate: "التاريخ",
+    historyStatus: "الحالة",
+    historyAction: "الإجراء",
+    historySessionBadge: "الجلسة النشطة",
+    historyPastBadge: "منتهي الصلاحية",
+    downloadAgain: "تنزيل",
+    convertAgain: "تحويل مجدداً",
+    historyFailed: "فشل"
   }
 };
 
@@ -226,9 +261,9 @@ interface HistoryItem {
 }
 
 export default function App() {
-  const [lang, setLang] = useState<'en' | 'tr' | 'fr' | 'de'>(() => {
+  const [lang, setLang] = useState<'en' | 'tr' | 'fr' | 'de' | 'ar'>(() => {
     const saved = localStorage.getItem('swift_shift_lang');
-    return (saved as 'en' | 'tr' | 'fr' | 'de') || 'en';
+    return (saved as 'en' | 'tr' | 'fr' | 'de' | 'ar') || 'en';
   });
 
   const [isLangOpen, setIsLangOpen] = useState(false);
@@ -261,7 +296,7 @@ export default function App() {
     };
   }, []);
 
-  const handleSetLang = (newLang: 'en' | 'tr' | 'fr' | 'de') => {
+  const handleSetLang = (newLang: 'en' | 'tr' | 'fr' | 'de' | 'ar') => {
     setLang(newLang);
     localStorage.setItem('swift_shift_lang', newLang);
     setIsLangOpen(false);
@@ -269,6 +304,7 @@ export default function App() {
 
   const [files, setFiles] = useState<FileItem[]>([]);
   const [previewItem, setPreviewItem] = useState<FileItem | null>(null);
+  const [selectedPdfItem, setSelectedPdfItem] = useState<FileItem | null>(null);
   const [isBulkConverting, setIsBulkConverting] = useState(false);
 
   const t = translations[lang] || translations.en;
@@ -786,10 +822,10 @@ export default function App() {
                     {/* Round button representing selected language flag */}
                     <button
                       onClick={() => setIsLangOpen(!isLangOpen)}
-                      className="w-10 h-10 rounded-full border-2 border-slate-900 bg-amber-100 hover:bg-amber-200 flex items-center justify-center text-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all hover:translate-y-[-1px] hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] focus:outline-none cursor-pointer"
-                      title={lang === 'en' ? 'English' : lang === 'tr' ? 'Türkçe' : lang === 'fr' ? 'Français' : 'Deutsch'}
+                      className="w-10 h-10 rounded-full border-2 border-slate-900 bg-amber-100 hover:bg-amber-200 flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all hover:translate-y-[-1px] hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] focus:outline-none cursor-pointer"
+                      title={lang === 'en' ? 'English' : lang === 'tr' ? 'Türkçe' : lang === 'fr' ? 'Français' : lang === 'de' ? 'Deutsch' : 'العربية'}
                     >
-                      {lang === 'en' ? '🇬🇧' : lang === 'tr' ? '🇹🇷' : lang === 'fr' ? '🇫🇷' : '🇩🇪'}
+                      <Flag lang={lang} className="w-7 h-5 border border-slate-900 rounded-sm shadow-none" />
                     </button>
 
                     {/* Popover Dropdown menu */}
@@ -803,21 +839,19 @@ export default function App() {
                           className="absolute left-0 mt-2 w-44 bg-white border-2 border-slate-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-50 overflow-hidden"
                         >
                           <div className="p-1 flex flex-col gap-1">
-                            {(['en', 'tr', 'fr', 'de'] as const).map((l) => (
+                            {(['en', 'tr', 'fr', 'de', 'ar'] as const).map((l) => (
                               <button
                                 key={l}
                                 onClick={() => handleSetLang(l)}
-                                className={`flex items-center gap-2.5 w-full text-left px-3 py-2 text-xs font-black rounded-lg transition-colors cursor-pointer ${
+                                className={`flex items-center gap-3 w-full text-left px-3 py-2 text-xs font-black rounded-lg transition-colors cursor-pointer ${
                                   lang === l
                                     ? 'bg-amber-100 text-slate-950'
                                     : 'bg-transparent text-slate-700 hover:bg-slate-100'
                                 }`}
                               >
-                                <span className="text-base leading-none">
-                                  {l === 'en' ? '🇬🇧' : l === 'tr' ? '🇹🇷' : l === 'fr' ? '🇫🇷' : '🇩🇪'}
-                                </span>
+                                <Flag lang={l} className="w-5 h-3.5 border border-slate-900 rounded-sm" />
                                 <span>
-                                  {l === 'en' ? 'English' : l === 'tr' ? 'Türkçe' : l === 'fr' ? 'Français' : 'Deutsch'}
+                                  {l === 'en' ? 'English' : l === 'tr' ? 'Türkçe' : l === 'fr' ? 'Français' : l === 'de' ? 'Deutsch' : 'العربية'}
                                 </span>
                               </button>
                             ))}
@@ -918,6 +952,7 @@ export default function App() {
                       onStartConversion={startConversion}
                       onRemove={handleRemoveFile}
                       onPreview={(itm) => setPreviewItem(itm)}
+                      onSummarizePdf={(itm) => setSelectedPdfItem(itm)}
                     />
                   ))}
                 </AnimatePresence>
@@ -1088,6 +1123,15 @@ export default function App() {
           />
         )}
       </AnimatePresence>
+
+      {/* AI PDF Summarizer Side Panel */}
+      <AiPdfSummarizer
+        files={files}
+        lang={lang}
+        selectedPdfItem={selectedPdfItem}
+        onClearSelectedPdf={() => setSelectedPdfItem(null)}
+        onAddFiles={handleAddFiles}
+      />
     </div>
   );
 }

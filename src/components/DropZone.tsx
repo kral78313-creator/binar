@@ -5,7 +5,7 @@ import { SUPPORTED_INPUTS } from '../types';
 
 interface DropZoneProps {
   onFilesSelected: (files: File[]) => void;
-  lang?: 'en' | 'tr' | 'fr' | 'de';
+  lang?: 'en' | 'tr' | 'fr' | 'de' | 'ar';
 }
 
 const dropzoneTranslations = {
@@ -47,6 +47,16 @@ const dropzoneTranslations = {
     images: "Bilder",
     excelCsv: "Excel / CSV",
     pdfDocs: "PDF-Dokumente",
+    textMarkup: "MD / JSON / TXT",
+  },
+  ar: {
+    dropTitleFirst: "قم بإسقاط ملفاتك هنا، أو ",
+    dropTitleSecond: "تصفح",
+    dropSub: "قم بتحويل ملفات PDF أو Excel أو CSV أو الصور أو Markdown أو HTML أو JSON أو TXT على الفور.",
+    browseBtn: "تصفح الملفات المحلية",
+    images: "صور",
+    excelCsv: "إكسل / CSV",
+    pdfDocs: "ملفات PDF",
     textMarkup: "MD / JSON / TXT",
   }
 };
